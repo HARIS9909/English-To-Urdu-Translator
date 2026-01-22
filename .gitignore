@@ -1,0 +1,35 @@
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs and temp files
+*.log
+*run.log
+*.tmp
+*.cache
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Streamlit cache
+.streamlit/
+
+# Model weights and training artifacts (Case A: exclude)
+finetuned-opus/model.safetensors
+finetuned-opus/checkpoint-*/
+finetuned-opus/optimizer.pt
+finetuned-opus/scheduler.pt
+finetuned-opus/rng_state.pth
+finetuned-opus/trainer_state.json
+finetuned-opus/training_args.bin
+
+# Generated outputs
+datasets/chatbot_auto_test.txt
+datasets/bleu_results.txt
+datasets/bleu_model.txt
+datasets/final_comparison.txt
+datasets/final_metrics.json
+datasets/bleu_compare.txt

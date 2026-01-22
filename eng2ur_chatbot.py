@@ -2,291 +2,212 @@ import streamlit as st
 import torch
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import pandas as pd
-import time
 from datetime import datetime
-import os
+import time
 
-# Page configuration
+# --- PAGE CONFIG ---
 st.set_page_config(
-    page_title="English to Urdu Translator",
-    page_icon="🤖",
+    page_title="Urdu.AI | Premium Translator",
+    page_icon="🔮",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+# --- MODERN NEON CSS ---
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;500;700&family=Noto+Nastaliq+Urdu&display=swap');
+
+    /* Global Background */
+    .stApp {
+        background: radial-gradient(circle at top right, #1e293b, #0f172a);
+        color: #f8fafc;
+        font-family: 'Space Grotesk', sans-serif;
+    }
+
+    /* Main Header */
     .main-header {
-        font-size: 2.5rem;
-        color: #1E3A8A;
+        background: linear-gradient(90deg, #60a5fa, #c084fc);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-size: 3.5rem;
+        font-weight: 800;
         text-align: center;
-        margin-bottom: 1rem;
+        margin-bottom: 0px;
     }
-    .sub-header {
-        font-size: 1.2rem;
-        color: #4B5563;
-        text-align: center;
-        margin-bottom: 2rem;
+
+    /* Glass Cards */
+    .glass-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        padding: 25px;
+        backdrop-filter: blur(10px);
+        margin-bottom: 20px;
     }
-    .success-box {
-        background-color: #D1FAE5;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #10B981;
-        margin: 1rem 0;
-    }
-    .urdu-text {
-        font-size: 1.5rem;
-        color: #059669;
+
+    /* Urdu Text Styling */
+    .urdu-output {
+        font-family: 'Noto Nastaliq Urdu', serif;
+        font-size: 1.8rem !important;
+        line-height: 2.0 !important;
         direction: rtl;
         text-align: right;
-        font-family: 'Noto Nastaliq Urdu', 'Segoe UI', sans-serif;
-        padding: 1rem;
-        background-color: #F0F9FF;
-        border-radius: 0.5rem;
-        border: 1px solid #E5E7EB;
+        color: #e2e8f0;
+        padding: 20px;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 15px;
+        border-right: 5px solid #c084fc;
     }
+
+    /* Custom Text Area */
+    .stTextArea textarea {
+        background: rgba(15, 23, 42, 0.6) !important;
+        color: white !important;
+        border: 1px solid rgba(96, 165, 250, 0.3) !important;
+        border-radius: 15px !important;
+        font-size: 1.1rem;
+    }
+    
+    .stTextArea textarea:focus {
+        border-color: #60a5fa !important;
+        box-shadow: 0 0 15px rgba(96, 165, 250, 0.2) !important;
+    }
+
+    /* Glowing Button */
     .stButton button {
-        background-color: #2563EB;
-        color: white;
-        font-weight: bold;
-        border-radius: 0.5rem;
-        padding: 0.5rem 2rem;
-        border: none;
+        background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%) !important;
+        border: none !important;
+        color: white !important;
+        font-weight: 600 !important;
+        border-radius: 12px !important;
+        transition: all 0.3s ease !important;
+        width: 100%;
+        height: 50px;
     }
     .stButton button:hover {
-        background-color: #1D4ED8;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(139, 92, 246, 0.4) !important;
     }
-    .model-info {
-        background-color: #FEF3C7;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #F59E0B;
+
+    /* Sidebar Fix */
+    [data-testid="stSidebar"] {
+        background-color: #0f172a !important;
+        border-right: 1px solid rgba(255, 255, 255, 0.05);
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Title and Header
-st.markdown('<h1 class="main-header">🤖 English to Urdu Translator</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Trained with dedication using fine-tuned models • Your personal translation assistant</p>', unsafe_allow_html=True)
+# --- SESSION INITIALIZATION ---
+if 'history' not in st.session_state: st.session_state.history = []
+if 'model_ready' not in st.session_state: st.session_state.model_ready = False
+if 'count' not in st.session_state: st.session_state.count = 0
 
-# Initialize session state for chat history
-if 'history' not in st.session_state:
-    st.session_state.history = []
-if 'model_loaded' not in st.session_state:
-    st.session_state.model_loaded = False
-if 'translations_count' not in st.session_state:
-    st.session_state.translations_count = 0
-
-@st.cache_resource(show_spinner="Loading the translation model...")
-def load_model():
-    """Load the translation model with progress indication"""
+# --- MODEL CORE ---
+@st.cache_resource(show_spinner=False)
+def load_ai_engine():
     names = ["finetuned-opus", "Helsinki-NLP/opus-mt-en-ur"]
-    tokenizer = None
-    model = None
-    loaded_name = None
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    for idx, name in enumerate(names):
-        status_text.text(f"Attempting to load: {name}")
-        progress_bar.progress((idx + 1) * 50)
+    for name in names:
         try:
             tokenizer = AutoTokenizer.from_pretrained(name)
             model = AutoModelForSeq2SeqLM.from_pretrained(name)
-            loaded_name = name
-            status_text.text(f"✅ Successfully loaded: {name}")
-            time.sleep(0.5)
-            break
-        except Exception as e:
-            status_text.text(f"❌ Could not load {name}, trying next...")
-            time.sleep(0.5)
-            continue
-    
-    progress_bar.empty()
-    status_text.empty()
-    
-    if model is not None:
-        device = "cpu"
-        model.to(device)
-        st.session_state.model_loaded = True
-        return tokenizer, model, device, loaded_name
-    else:
-        st.error("❌ Could not load any model. Please check your model files.")
-        return None, None, None, None
+            model.to("cpu")
+            return tokenizer, model, name
+        except: continue
+    return None, None, None
 
-# Sidebar
+# --- SIDEBAR UI ---
 with st.sidebar:
-    st.markdown("## 🎛️ Control Panel")
+    st.image("https://img.icons8.com/fluency/144/artificial-intelligence.png", width=80)
+    st.markdown("## Urdu.AI Control")
+    st.caption("v2.0 • Fine-tuned Neural Engine")
     
-    # Model loading section
-    if st.button("🚀 Load Translation Model", type="primary"):
-        with st.spinner("Loading model... This might take a moment"):
-            tokenizer, model, device, loaded_name = load_model()
-            if model:
-                st.success(f"✅ Model loaded successfully: {loaded_name}")
-                st.session_state.tokenizer = tokenizer
-                st.session_state.model = model
-                st.session_state.device = device
-                st.session_state.loaded_name = loaded_name
+    if st.button("🔌 Connect AI Engine", type="primary"):
+        with st.spinner("Initializing neural links..."):
+            tok, mod, name = load_ai_engine()
+            if mod:
+                st.session_state.tokenizer = tok
+                st.session_state.model = mod
+                st.session_state.model_name = name
+                st.session_state.model_ready = True
+                st.toast("AI Engine Online!", icon="🚀")
     
-    st.markdown("---")
+    st.divider()
+    st.markdown("### 📈 Session Stats")
+    c1, c2 = st.columns(2)
+    c1.metric("Translated", st.session_state.count)
+    c2.metric("History", len(st.session_state.history))
     
-    # Quick examples
-    # st.markdown("### 💡 Quick Examples")
-    examples = [
-        # "hello",
-        # "i want to talk",
-        # "my friend lives in Karachi",
-        # "can you help me",
-        # "pakistan won the match",
-        # "thank you very much",
-        # "where is the bus stop?"
-    ]
-    
-    for example in examples:
-        if st.button(f"• {example}", key=f"ex_{example}"):
-            st.session_state.example_text = example
-    
-    st.markdown("---")
-    
-    # Statistics
-    st.markdown("### 📊 Statistics")
-    st.metric("Translations Today", st.session_state.translations_count)
-    st.metric("Chat History", len(st.session_state.history))
-    
-    # Clear history button
-    if st.button("🗑️ Clear History"):
+    if st.button("🗑️ Reset Workspace"):
         st.session_state.history = []
-        st.session_state.translations_count = 0
-        st.success("History cleared!")
+        st.session_state.count = 0
+        st.rerun()
 
-# Main content area
-col1, col2 = st.columns([1, 1])
+# --- MAIN INTERFACE ---
+st.markdown('<h1 class="main-header">Urdu.AI</h1>', unsafe_allow_html=True)
+st.markdown('<p style="text-align:center; color:#94a3b8; margin-top:-10px;">The Next-Gen Translation Suite</p>', unsafe_allow_html=True)
+
+st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+col1, col2 = st.columns([1, 1], gap="large")
 
 with col1:
-    st.markdown("### ✍️ Input English Text")
-    
-    # Text input with example
-    if 'example_text' in st.session_state:
-        default_text = st.session_state.example_text
-        del st.session_state.example_text
-    else:
-        default_text = ""
-    
-    input_text = st.text_area(
-        "Enter English text to translate:",
-        value=default_text,
-        height=150,
-        placeholder="Type your English text here...",
-        key="input_text"
-    )
-    
-    # Translation button
-    col1_1, col1_2, col1_3 = st.columns([1, 1, 1])
-    with col1_2:
-        translate_clicked = st.button("Translate 🔄", type="primary", use_container_width=True)
+    st.markdown("### 📤 English Source")
+    src_text = st.text_area("", placeholder="Enter text to translate...", height=180, label_visibility="collapsed")
+    translate_trigger = st.button("Translate Now ✨")
 
 with col2:
-    st.markdown("### 📝 Urdu Translation")
-    
-    if translate_clicked and input_text.strip():
-        if not st.session_state.model_loaded:
-            st.warning("⚠️ Please load the model first from the sidebar!")
+    st.markdown("### 📥 Urdu Output")
+    if translate_trigger and src_text.strip():
+        if not st.session_state.model_ready:
+            st.error("Please connect the AI Engine first from the sidebar!")
         else:
-            with st.spinner("Translating..."):
-                try:
-                    # Prepare inputs
-                    inputs = st.session_state.tokenizer(
-                        input_text, 
-                        return_tensors="pt", 
-                        padding=True, 
-                        truncation=True
+            with st.spinner("AI is thinking..."):
+                start_time = time.time()
+                # Inference Logic
+                inputs = st.session_state.tokenizer(src_text, return_tensors="pt", padding=True, truncation=True)
+                with torch.no_grad():
+                    outputs = st.session_state.model.generate(
+                        **inputs, max_new_tokens=128, num_beams=5, early_stopping=True
                     )
-                    inputs = {k: v.to(st.session_state.device) for k, v in inputs.items()}
-                    
-                    # Generate translation
-                    with torch.no_grad():
-                        output_ids = st.session_state.model.generate(
-                            **inputs,
-                            max_new_tokens=64,
-                            num_beams=5,
-                            length_penalty=1.1,
-                            no_repeat_ngram_size=3,
-                            early_stopping=True,
-                        )
-                    
-                    urdu_translation = st.session_state.tokenizer.decode(
-                        output_ids[0], 
-                        skip_special_tokens=True
-                    )
-                    
-                    # Display translation
-                    st.markdown(f'<div class="urdu-text">{urdu_translation}</div>', unsafe_allow_html=True)
-                    
-                    # Add to history
-                    timestamp = datetime.now().strftime("%H:%M:%S")
-                    st.session_state.history.append({
-                        'time': timestamp,
-                        'english': input_text,
-                        'urdu': urdu_translation
-                    })
-                    
-                    # Update counter
-                    st.session_state.translations_count += 1
-                    
-                    # Success message
-                    st.success("✅ Translation successful!")
-                    
-                    # Copy button
-                    st.code(urdu_translation, language=None)
-                    
-                except Exception as e:
-                    st.error(f"❌ Translation error: {str(e)}")
+                prediction = st.session_state.tokenizer.decode(outputs[0], skip_special_tokens=True)
+                end_time = time.time()
+                
+                # Render Output
+                st.markdown(f'<div class="urdu-output">{prediction}</div>', unsafe_allow_html=True)
+                
+                # Save State
+                st.session_state.count += 1
+                st.session_state.history.append({
+                    "time": datetime.now().strftime("%I:%M %p"),
+                    "en": src_text,
+                    "ur": prediction,
+                    "lat": f"{end_time-start_time:.2f}s"
+                })
+                st.caption(f"Translated in {end_time-start_time:.2f}s")
     else:
-        st.info("👈 Enter text and click 'Translate' to see Urdu translation here")
+        st.markdown('<div class="urdu-output" style="color:#475569; opacity:0.5; text-align:center;">ترجمہ یہاں ظاہر ہوگا</div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-# History Section
-st.markdown("---")
-st.markdown("### 📜 Translation History")
-
+# --- HISTORY SECTION ---
 if st.session_state.history:
-    # Convert history to DataFrame for display
-    history_df = pd.DataFrame(st.session_state.history)
-    
-    # Display in reverse chronological order
+    st.markdown("### 📜 Recent Intelligence History")
     for idx, item in enumerate(reversed(st.session_state.history)):
-        with st.expander(f"#{len(st.session_state.history)-idx} | {item['time']}"):
-            st.markdown(f"**English:** {item['english']}")
-            st.markdown(f"**Urdu:** {item['urdu']}")
+        with st.expander(f"Translation #{len(st.session_state.history)-idx} — {item['time']}"):
+            hcol1, hcol2 = st.columns([1, 1])
+            hcol1.markdown(f"**English:**\n{item['en']}")
+            hcol2.markdown(f"<div style='direction:rtl; text-align:right; font-family:\"Noto Nastaliq Urdu\";'>{item['ur']}</div>", unsafe_allow_html=True)
             
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button("📋 Copy Urdu", key=f"copy_{idx}"):
-                    st.code(item['urdu'])
-                    st.toast("Copied to clipboard!", icon="✅")
-            
-            with col_btn2:
-                if st.button("🗑️ Delete", key=f"del_{idx}"):
-                    # Find and remove the item
-                    for i, hist_item in enumerate(st.session_state.history):
-                        if hist_item['time'] == item['time'] and hist_item['english'] == item['english']:
-                            del st.session_state.history[i]
-                            st.rerun()
-                            break
-else:
-    st.info("No translations yet. Start by translating some text!")
+            # Simple Copy Logic
+            st.code(item['ur'], language=None)
+            if st.button("🗑️ Delete", key=f"del_{idx}"):
+                st.session_state.history.pop(-(idx+1))
+                st.rerun()
 
-# Footer
-st.markdown("---")
+# --- FOOTER ---
 st.markdown(
-    """
-    <div style="text-align: center; color: #6B7280; padding: 1rem;">
-        <p>Built with ❤️ using Streamlit • Fine-tuned Translation Model • Designed for simplicity</p>
-        <p>Made possible by your hard work in training the model! 🎉</p>
-    </div>
-    """, 
+    f"""<div style="text-align: center; color: #475569; padding: 2rem;">
+        Model: <span style="color:#60a5fa">{st.session_state.get('model_name', 'Not Connected')}</span> | 
+        Developed with Precision 🛠️
+    </div>""", 
     unsafe_allow_html=True
 )
